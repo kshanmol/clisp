@@ -4,6 +4,9 @@
 #include <editline/readline.h>
 #include "mpc.h"
 
+#define LASSERT(args, cond, err) \
+	if (!(cond)) { lval_del(args); return lval_err(err); }
+
 // lisp value (either a number or an error or a symbol or a symbolic expression)
 typedef struct lval{
 	int type;
@@ -150,6 +153,42 @@ lval* lval_take(lval* v, int i) {
 	return x;
 }
 
+lval* builtin_head(lval* a) {
+	LASSERT(a, a->count == 1, "Function 'head' passed too many args");
+	LASSERT(a, a->cell[0]->type == LVAL_QEXPR, "Function 'head' passed wrong type");
+	LASSERT(a, a->cell[0]->count != 0, "Function 'head' passed {}");
+
+	lval* v = lval_take(a, 0);
+	while (v->count > 1) { lval_del(lval_pop(v, 1)); }
+	return v;
+}
+
+lval* builtin_tail(lval* a) {
+	LASSERT(a, a->count == 1, "Function 'tail' passed too many args");
+	LASSERT(a, a->cell[0]->type == LVAL_QEXPR, "Function 'tail' passed wrong type");
+	LASSERT(a, a->cell[0]->count != 0, "Function 'tail' passed {}");
+
+	lval* v = lval_take(a, 0);
+	lval_del(lval_pop(v, 0)); 
+	return v;
+}
+
+lval* builtin_list(lval* a) {
+	a->type = LVAL_QEXPR;
+	return a;
+}
+
+lval* lval_eval(lval* v);
+
+lval* builtin_eval(lval* a) {
+	LASSERT(a, a->count == 1, "Function 'eval' passed too many args");
+	LASSERT(a, a->cell[0]->type == LVAL_QEXPR, "Function 'eval' passed incorrect type");
+
+	lval* x = lval_take(a, 0);
+	x->type = LVAL_SEXPR;
+	return lval_eval(x);
+}
+
 lval* builtin_op(lval* a, char* op) {
 
 	for (int i = 0; i < a->count; i++) {
@@ -184,8 +223,17 @@ lval* builtin_op(lval* a, char* op) {
 	return x;
 }
 
+lval* builtin(lval* a, char* func) {
+	if (strcmp("list", func) == 0) { return builtin_list(a); }
+	if (strcmp("head", func) == 0) { return builtin_head(a); }
+	if (strcmp("tail", func) == 0) { return builtin_tail(a); }
+//	if (strcmp("join", func) == 0) { return builtin_join(a); }
+	if (strcmp("eval", func) == 0) { return builtin_eval(a); }
+	if (strstr("+-/*", func)) { return builtin_op(a, func); }
+	lval_del(a);
+	return lval_err("Unknown function!");
+}
 
-lval* lval_eval(lval* v);
 
 lval* lval_eval_sexpr(lval* v) {
 
@@ -207,7 +255,7 @@ lval* lval_eval_sexpr(lval* v) {
 		return lval_err("S-expression does not begin with symbol!");
 	}
 
-	lval* result = builtin_op(v, first->sym);
+	lval* result = builtin(v, first->sym);
 	lval_del(first);
 	return result;
 }
@@ -229,7 +277,8 @@ int main(int argc, char** argv) {
 	mpca_lang(MPCA_LANG_DEFAULT,
 		"								\
 			number	: /-?[0-9]+/ ;					\
-			symbol  : '+' | '-' | '*' | '/' ;			\
+			symbol  : \"list\" | \"head\" | \"tail\" | \"join\"	\ 
+				| \"eval\" | '+' | '-' | '*' | '/' ;	\
 			sexpr	: '(' <expr>* ')' ;				\
 			qexpr	: '{' <expr>* '}' ;				\
 			expr	: <number> | <symbol> | <sexpr> | <qexpr>;	\
