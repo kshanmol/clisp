@@ -189,6 +189,68 @@ lval* builtin_eval(lval* a) {
 	return lval_eval(x);
 }
 
+lval* lval_join(lval* x, lval* y) {
+
+	while (y->count) {
+		x = lval_add(x, lval_pop(y, 0));
+	}
+
+	lval_del(y);
+	return x;
+}
+
+lval* builtin_join(lval* a) {
+
+	for (int i = 0; i < a->count; i++) {
+		LASSERT(a, a->cell[i]->type == LVAL_QEXPR, "Function 'join' passed wrong type");
+	}
+
+	lval* x = lval_pop(a, 0);
+
+	while(a->count) {
+		x = lval_join(x, lval_pop(a, 0));
+	}
+
+	lval_del(a);
+	return x;
+}
+
+lval* builtin_cons(lval* a) {
+
+	LASSERT(a, a->count == 2, "Function 'cons' takes exactly two arguments");
+	LASSERT(a, a->cell[0]->type == LVAL_NUM || a->cell[0]->type == LVAL_SYM, "First arg to 'cons' should be a number or a symbol!");
+	LASSERT(a, a->cell[1]->type == LVAL_QEXPR, "Second arg to 'cons' should be a Q-Expression!");
+
+	lval* x = lval_pop(a, 0);
+	lval* q = lval_pop(a, 0);
+	q->count++;
+	q->cell = realloc(q->cell, sizeof(lval*) * q->count);
+	memmove(&q->cell[1], &q->cell[0], sizeof(lval*) * (q->count - 1));
+	q->cell[0] = x;
+
+	lval_del(a);
+	return q;
+}
+
+lval* builtin_init(lval* a) {
+	LASSERT(a, a->count == 1, "Function 'init' takes exactly one argument");
+	LASSERT(a, a->cell[0]->type == LVAL_QEXPR, "Function 'init' passed wrong type");
+	LASSERT(a, a->cell[0]->count != 0, "Function 'init' passed {}");
+
+	lval* v = lval_take(a, 0);
+	lval_del(lval_pop(v, v->count-1));
+	return a;
+}
+
+lval* builtin_len(lval* a) {
+	LASSERT(a, a->count == 1, "Function 'len' takes exactly one argument");
+	LASSERT(a, a->cell[0]->type == LVAL_QEXPR, "Function 'len' passed wrong type");
+
+	lval* x = lval_num(a->cell[0]->count);
+	lval_del(a);
+	return x;
+}
+
 lval* builtin_op(lval* a, char* op) {
 
 	for (int i = 0; i < a->count; i++) {
@@ -217,6 +279,13 @@ lval* builtin_op(lval* a, char* op) {
 			}
 			x->num /= y->num;
 		}
+		if (strcmp(op, "%") == 0) {
+			if (y->num == 0) {
+				lval_del(x); lval_del(y);
+				x = lval_err("Division by zero"); break;
+			}
+			x->num %= y->num;
+		}
 		lval_del(y);
 	}
 	lval_del(a);
@@ -227,9 +296,12 @@ lval* builtin(lval* a, char* func) {
 	if (strcmp("list", func) == 0) { return builtin_list(a); }
 	if (strcmp("head", func) == 0) { return builtin_head(a); }
 	if (strcmp("tail", func) == 0) { return builtin_tail(a); }
-//	if (strcmp("join", func) == 0) { return builtin_join(a); }
+	if (strcmp("join", func) == 0) { return builtin_join(a); }
 	if (strcmp("eval", func) == 0) { return builtin_eval(a); }
-	if (strstr("+-/*", func)) { return builtin_op(a, func); }
+	if (strcmp("cons", func) == 0) { return builtin_cons(a); }
+	if (strcmp("len", func) == 0) { return builtin_len(a); }
+	if (strcmp("init", func) == 0) { return builtin_init(a); }
+	if (strstr("+-/*%", func)) { return builtin_op(a, func); }
 	lval_del(a);
 	return lval_err("Unknown function!");
 }
@@ -277,8 +349,9 @@ int main(int argc, char** argv) {
 	mpca_lang(MPCA_LANG_DEFAULT,
 		"								\
 			number	: /-?[0-9]+/ ;					\
-			symbol  : \"list\" | \"head\" | \"tail\" | \"join\"	\ 
-				| \"eval\" | '+' | '-' | '*' | '/' ;	\
+			symbol  : \"list\" | \"head\" | \"tail\" | \"join\"	\
+				| \"eval\" | \"cons\" | \"len\" | \"init\"	\
+				| '+' | '-' | '*' | '/' | '%' ;			\
 			sexpr	: '(' <expr>* ')' ;				\
 			qexpr	: '{' <expr>* '}' ;				\
 			expr	: <number> | <symbol> | <sexpr> | <qexpr>;	\
