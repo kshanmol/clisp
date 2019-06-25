@@ -512,6 +512,23 @@ lval* builtin_def(lenv* e, lval* a) {
 	return lval_sexpr();
 }
 
+lval* builtin_vars(lenv* e, lval* a) {
+	LASSERT_NUM("vars", a, 1);
+	
+	lval* result = lval_qexpr();
+	result->count = e->count;
+	result->cell = malloc(sizeof(lval*) * result->count); 
+	
+	for(int i = 0;i < e->count;i++) {
+		result->cell[i] = lval_qexpr();
+		result->cell[i] = lval_add(result->cell[i], lval_sym(e->syms[i]));
+		result->cell[i] = lval_add(result->cell[i], lval_copy(e->vals[i]));
+	}
+
+	lval_del(a);		
+	return result;
+}
+ 
 void lenv_add_builtin(lenv* e, char* name, lbuiltin func) {
 	lval* k = lval_sym(name);
 	lval* v = lval_fun(func);
@@ -539,6 +556,7 @@ void lenv_add_builtins(lenv* e) {
 
 	/* Variable functions */
 	lenv_add_builtin(e, "def", builtin_def);
+	lenv_add_builtin(e, "vars", builtin_vars);
 }
 
 int main(int argc, char** argv) {
